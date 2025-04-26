@@ -1,12 +1,11 @@
 from datetime import datetime
 from random import choice
-import time
 from telebot import types
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 from constants import variants
 from keyboards import create_main_keyboard, create_inline_keyboard
 from database.db_operations import update_cart_quantity, insert_highlight, delete_highlight, delete_cart, insert_users, personal_data, get_products, get_shops, get_categories, cart_database, likes_database, check_record_exists, insert_cart_with_size, insert_cart
-from database.db import conn, cur
+from database.db import get_db
 from bot_instance import bot
 from utils import send_product_page, process_fio_step, process_phone_step, process_region_step, process_city_step, process_street_step, process_house_step, process_flat_step, process_index_step, price_counter, print_personal_data, process_product_id_search
 
@@ -93,10 +92,11 @@ def handle_text(message):
                 arr=favorites[i].images
                 descr=favorites[i].description
                 for j in range(len(arr)):
-                    if j== 0:
-                        media.append(types.InputMediaPhoto(open(arr[j], 'rb'), caption=descr, parse_mode="Markdown"))
-                    else:
-                        media.append(types.InputMediaPhoto(open(arr[j], 'rb')))
+                    with open(arr[j], 'rb') as f:
+                        if j == 0:
+                            media.append(types.InputMediaPhoto(f.read(), caption=descr, parse_mode="Markdown"))
+                        else:
+                            media.append(types.InputMediaPhoto(f.read()))
                 sent_media_messages = bot.send_media_group(message.chat.id, media)
                 media_messages[i] = [msg.message_id for msg in sent_media_messages]
                 markup = types.InlineKeyboardMarkup()
@@ -127,10 +127,12 @@ def handle_text(message):
                     descr = products[cart_arr[i][0] - 1].description + "\n \n*Количество:* "+ str(cart_arr[i][2])
 
                 for j in range(len(arr)):
-                    if j == 0:
-                        media.append(types.InputMediaPhoto(open(arr[j], 'rb'), caption=descr, parse_mode="Markdown"))
-                    else:
-                        media.append(types.InputMediaPhoto(open(arr[j], 'rb')))
+                    with open(arr[j], 'rb') as f:
+                        if j == 0:
+                            media.append(types.InputMediaPhoto(f.read(), caption=descr, parse_mode="Markdown"))
+                        else:
+                            media.append(types.InputMediaPhoto(f.read()))
+
                 sent_media_messages = bot.send_media_group(message.chat.id, media)
                 key = f"{cart_arr[i][0]}_{cart_arr[i][1]}"  # Уникальный ключ: product_id + size
                 cart_messages[key] = [msg.message_id for msg in sent_media_messages]
@@ -152,19 +154,21 @@ def handle_text(message):
 
 
         elif message.text == "Личные данные":
-            cur.execute("UPDATE users SET username=? WHERE id=?",
-                        (message.from_user.username, message.from_user.id))
-            conn.commit()
-            user_id = message.from_user.id
-            pers_data = personal_data(user_id)
-            if not pers_data:  # Проверяем, есть ли данные
-                bot.send_message(message.chat.id, "Данные не найдены", parse_mode="Markdown")
-            else:
-                txt=print_personal_data(pers_data)
-                markup = types.InlineKeyboardMarkup()
-                item1 = types.InlineKeyboardButton('Изменить данные', callback_data='change')
-                markup.add(item1)
-                bot.send_message(message.chat.id, txt, parse_mode="Markdown", reply_markup=markup)
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE users SET username=? WHERE id=?",
+                            (message.from_user.username, message.from_user.id))
+                conn.commit()
+                user_id = message.from_user.id
+                pers_data = personal_data(user_id)
+                if not pers_data:  # Проверяем, есть ли данные
+                    bot.send_message(message.chat.id, "Данные не найдены", parse_mode="Markdown")
+                else:
+                    txt=print_personal_data(pers_data)
+                    markup = types.InlineKeyboardMarkup()
+                    item1 = types.InlineKeyboardButton('Изменить данные', callback_data='change')
+                    markup.add(item1)
+                    bot.send_message(message.chat.id, txt, parse_mode="Markdown", reply_markup=markup)
 
         elif message.text == "Поиск по id":
             msg = bot.send_message(message.chat.id, f"Заинтересовало что-то конкретное?🔥\nВведи ID товара, попробуем найти! (1-{len(get_products())}):")
@@ -200,37 +204,36 @@ def callback_inline(call):
 
             elif call.data == 'change2':  # ФИО
                 msg = bot.send_message(call.message.chat.id, "Введи новое ФИО:")
-                bot.register_next_step_handler(msg, process_fio_step, conn)
+                bot.register_next_step_handler(msg, process_fio_step)
 
 
             elif call.data == 'change3':  # Номер телефона
                 msg = bot.send_message(call.message.chat.id, "Введи новый номер телефона:")
-                bot.register_next_step_handler(msg, process_phone_step, conn)
+                bot.register_next_step_handler(msg, process_phone_step)
 
             elif call.data == 'change4':  # Регион
                 msg = bot.send_message(call.message.chat.id, "Введи новый регион:")
-                bot.register_next_step_handler(msg, process_region_step, conn)
+                bot.register_next_step_handler(msg, process_region_step)
 
             elif call.data == 'change5':  # Город
                 msg = bot.send_message(call.message.chat.id, "Введи новый город:")
-
-                bot.register_next_step_handler(msg, process_city_step, conn)
+                bot.register_next_step_handler(msg, process_city_step)
 
             elif call.data == 'change6':  # Улица
                 msg = bot.send_message(call.message.chat.id, "Введи новую улицу:")
-                bot.register_next_step_handler(msg, process_street_step, conn)
+                bot.register_next_step_handler(msg, process_street_step)
 
             elif call.data == 'change7':  # Номер дома
                 msg = bot.send_message(call.message.chat.id, "Введи новый номер дома:")
-                bot.register_next_step_handler(msg, process_house_step, conn)
+                bot.register_next_step_handler(msg, process_house_step)
 
             elif call.data == 'change8':  # Номер квартиры
                 msg = bot.send_message(call.message.chat.id, "Введи новый номер квартиры:")
-                bot.register_next_step_handler(msg, process_flat_step, conn)
+                bot.register_next_step_handler(msg, process_flat_step)
 
             elif call.data == 'change9':  # Индекс
                 msg = bot.send_message(call.message.chat.id, "Введи новый индекс:")
-                bot.register_next_step_handler(msg, process_index_step, conn)
+                bot.register_next_step_handler(msg, process_index_step)
 
             if call.data == "agree":
                 try:
@@ -291,33 +294,27 @@ def callback_inline(call):
                         return
 
                     # Переносим товары из корзины в заказы
-                    for item in cart:
-                        product_id, size, quantity = item[0], item[1], item[2]
+                    with get_db() as conn:
+                        cur = conn.cursor()
 
-                        # Получаем shop_id для товара
-                        cur.execute("SELECT shop_id FROM products WHERE id = ?", (product_id,))
-                        result = cur.fetchone()
+                        for product_id, size, quantity in cart:
+                            cur.execute("SELECT shop_id, price FROM products WHERE id = ?", (product_id,))
+                            result = cur.fetchone()
 
-                        if not result:
-                            continue
+                            if not result:
+                                continue
 
-                        shop_id = result[0]
+                            shop_id, price = result
+                            total_price = price * quantity
 
-                        cur.execute("SELECT price FROM products WHERE id = ?", (product_id,))
-                        res = cur.fetchone()
-                        if not result:
-                            continue
-                        pr = res[0]
+                            # Добавляем заказ
+                            cur.execute('''
+                                INSERT INTO orders (user_id, shop_id, product_id, date, quantity, size, price)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ''', (user_id, shop_id, product_id, today, quantity, size, total_price))
 
-                        # Добавляем в заказы
-                        cur.execute('''INSERT INTO orders (user_id, shop_id, product_id, date, quantity, size, price) 
-                                      VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                                    (user_id, shop_id, product_id, today, quantity, size, pr*quantity))
-                        conn.commit()
-
-                    # Очищаем корзину пользователя
-                    cur.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
-                    conn.commit()
+                        # Очищаем корзину после всех заказов
+                        cur.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
 
                     # Отправляем подтверждение
                     bot.send_message(call.message.chat.id,
@@ -343,8 +340,10 @@ def callback_inline(call):
             for i in range(len(shops)):
                 if call.data == 'next' + str(shops[i].id):
                     bot.delete_message(call.message.chat.id, call.message.message_id)
-                    cur.execute("SELECT id FROM products WHERE shop_id = ?", (shops[i].id,))
-                    shop_pr = [row[0] for row in cur.fetchall()]
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute("SELECT id FROM products WHERE shop_id = ?", (shops[i].id,))
+                        shop_pr = [row[0] for row in cur.fetchall()]
 
                     for product_id in shop_pr:
                         product_index = product_id - 1  # если id начинаются с 1, а индексы с 0
@@ -374,8 +373,10 @@ def callback_inline(call):
             # вывод товаров по категориям
             for i in range(len(categories)):
                 if call.data == 'k'+str(categories[i].id):
-                    cur.execute("SELECT id FROM products WHERE category_id = ?", (categories[i].id,))
-                    prod = [row[0] for row in cur.fetchall()]
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute("SELECT id FROM products WHERE category_id = ?", (categories[i].id,))
+                        prod = [row[0] for row in cur.fetchall()]
 
                     bot.send_message(call.message.chat.id, '*'+categories[i].name+ ':*', parse_mode="Markdown")
                     for product_id in prod:
@@ -517,16 +518,18 @@ def callback_inline(call):
                         delete_cart(user_id, product_id)
 
                     # Получаем актуальные данные корзины
-                    cur.execute("""
-                        SELECT 
-                            SUM(c.quantity), 
-                            SUM(c.quantity * p.price) 
-                        FROM cart c
-                        JOIN products p ON c.product_id = p.id
-                        WHERE c.user_id = ?
-                    """, (user_id,))
-                    new_quantity, new_price = cur.fetchone()
-                    conn.commit()
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute("""
+                                    SELECT 
+                                        SUM(c.quantity), 
+                                        SUM(c.quantity * p.price) 
+                                    FROM cart c
+                                    JOIN products p ON c.product_id = p.id
+                                    WHERE c.user_id = ?
+                                """, (user_id,))
+                        new_quantity, new_price = cur.fetchone()
+
                     if call.message.chat.id in total_price_messages:
                         try:
                             bot.delete_message(call.message.chat.id, total_price_messages[call.message.chat.id])
@@ -587,11 +590,11 @@ def callback_inline(call):
                         descr = products[product_id - 1].description + "\n \n*Количество:* " + str(quantity + 1)
 
                     for j in range(len(arr)):
-                        if j == 0:
-                            media.append(
-                                types.InputMediaPhoto(open(arr[j], 'rb'), caption=descr, parse_mode="Markdown"))
-                        else:
-                            media.append(types.InputMediaPhoto(open(arr[j], 'rb')))
+                        with open(arr[j], 'rb') as f:
+                            if j == 0:
+                                media.append(types.InputMediaPhoto(f.read(), caption=descr, parse_mode="Markdown"))
+                            else:
+                                media.append(types.InputMediaPhoto(f.read()))
 
                     sent_media_messages = bot.send_media_group(call.message.chat.id, media)
                     key = f"{product_id}_{size}"
@@ -609,16 +612,18 @@ def callback_inline(call):
                     cart_messages[key].append(delete_message.message_id)
 
                     # Получаем актуальные данные корзины
-                    cur.execute("""
-                                            SELECT 
-                                                SUM(c.quantity), 
-                                                SUM(c.quantity * p.price) 
-                                            FROM cart c
-                                            JOIN products p ON c.product_id = p.id
-                                            WHERE c.user_id = ?
-                                        """, (user_id,))
-                    new_quantity, new_price = cur.fetchone()
-                    conn.commit()
+                    with get_db() as conn:
+                        cur = conn.cursor()
+                        cur.execute("""
+                                                SELECT 
+                                                    SUM(c.quantity), 
+                                                    SUM(c.quantity * p.price) 
+                                                FROM cart c
+                                                JOIN products p ON c.product_id = p.id
+                                                WHERE c.user_id = ?
+                                            """, (user_id,))
+                        new_quantity, new_price = cur.fetchone()
+
                     if call.message.chat.id in total_price_messages:
                         try:
                             bot.delete_message(call.message.chat.id, total_price_messages[call.message.chat.id])
@@ -679,11 +684,11 @@ def callback_inline(call):
                             descr = products[product_id - 1].description + "\n \n*Количество:* " + str(quantity - 1)
 
                         for j in range(len(arr)):
-                            if j == 0:
-                                media.append(
-                                    types.InputMediaPhoto(open(arr[j], 'rb'), caption=descr, parse_mode="Markdown"))
-                            else:
-                                media.append(types.InputMediaPhoto(open(arr[j], 'rb')))
+                            with open(arr[j], 'rb') as f:
+                                if j == 0:
+                                    media.append(types.InputMediaPhoto(f.read(), caption=descr, parse_mode="Markdown"))
+                                else:
+                                    media.append(types.InputMediaPhoto(f.read()))
 
                         sent_media_messages = bot.send_media_group(call.message.chat.id, media)
                         key = f"{product_id}_{size}"
@@ -701,16 +706,18 @@ def callback_inline(call):
                         cart_messages[key].append(delete_message.message_id)
 
                         # Получаем актуальные данные корзины
-                        cur.execute("""
-                                                SELECT 
-                                                    SUM(c.quantity), 
-                                                    SUM(c.quantity * p.price) 
-                                                FROM cart c
-                                                JOIN products p ON c.product_id = p.id
-                                                WHERE c.user_id = ?
-                                            """, (user_id,))
-                        new_quantity, new_price = cur.fetchone()
-                        conn.commit()
+                        with get_db() as conn:
+                            cur = conn.cursor()
+                            cur.execute("""
+                                                    SELECT 
+                                                        SUM(c.quantity), 
+                                                        SUM(c.quantity * p.price) 
+                                                    FROM cart c
+                                                    JOIN products p ON c.product_id = p.id
+                                                    WHERE c.user_id = ?
+                                                """, (user_id,))
+                            new_quantity, new_price = cur.fetchone()
+
                         if call.message.chat.id in total_price_messages:
                             try:
                                 bot.delete_message(call.message.chat.id, total_price_messages[call.message.chat.id])
@@ -741,4 +748,4 @@ if __name__ == '__main__':
             bot.polling(none_stop=True, skip_pending=True)
         except Exception as e:
             print(f"Ошибка при polling: {e}")
-            time.sleep(15)
+

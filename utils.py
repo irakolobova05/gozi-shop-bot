@@ -1,5 +1,5 @@
 from telebot import types
-
+from database.db import get_db
 from telebot.types import InputMediaPhoto
 from bot_instance import bot
 from database.db_operations import check_record_exists, get_products
@@ -7,156 +7,151 @@ from database.db_operations import check_record_exists, get_products
 
 def send_product_page(call, photos, descr):
     media = []
-    for i, photo in enumerate(photos):
-        if i == 0:
-            media.append(InputMediaPhoto(
-                media=open(photo, 'rb'),
-                caption=descr,
-                parse_mode="Markdown"
-            ))
-        else:
-            media.append(InputMediaPhoto(
-                media=open(photo, 'rb')
-            ))
+    for i, photo_path in enumerate(photos):
+        try:
+            with open(photo_path, 'rb') as f:
+                photo_data = f.read()
+                if i == 0:
+                    media.append(InputMediaPhoto(
+                        media=photo_data,
+                        caption=descr,
+                        parse_mode="Markdown"
+                    ))
+                else:
+                    media.append(InputMediaPhoto(media=photo_data))
+        except Exception as e:
+            print(f"Ошибка при открытии файла {photo_path}: {e}")
 
-    bot.send_media_group(call, media)
+    if media:
+        bot.send_media_group(call, media)
+    else:
+        bot.send_message(call, "Не удалось загрузить изображения.")
 
 
-def process_fio_step(message, conn):
-    cursor = conn.cursor()
+def process_fio_step(message):
     try:
         fio = message.text.strip()
 
-        # Проверка минимальной и максимальной длины
         if len(fio) < 5:
             bot.send_message(message.chat.id, "Ошибка: ФИО слишком короткое! Минимум 5 символов.")
             return
         if len(fio) > 100:
             bot.send_message(message.chat.id, "Ошибка: ФИО слишком длинное! Максимум 100 символов.")
             return
-
-        # Проверка на допустимые символы (русские буквы, дефисы, пробелы, апострофы)
         if not all(char.isalpha() or char in ' -\'' for char in fio.replace('ё', 'е').replace('Ё', 'Е')):
-            bot.send_message(message.chat.id,
-                             "Ошибка: ФИО содержит недопустимые символы! Можно использовать только буквы, пробелы и дефисы.")
+            bot.send_message(message.chat.id, "Ошибка: ФИО содержит недопустимые символы!")
             return
 
-        cursor.execute("UPDATE users SET fio=? WHERE id=?",
-                      (message.text, message.from_user.id))
-        conn.commit()
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET fio=? WHERE id=?", (fio, message.from_user.id))
+
         bot.send_message(message.chat.id, "ФИО успешно обновлено!")
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
 
-def process_phone_step(message, conn):
-    cursor = conn.cursor()
+def process_phone_step(message):
     try:
-        if message.text[0]=='+' and len(message.text)!=12:
+        phone = message.text.strip()
+        if phone[0] == '+' and len(phone) != 12:
             bot.send_message(message.chat.id, "Номер телефона введен некорректно!")
             return
-        if message.text[0]=='8' and len(message.text)!=11:
+        if phone[0] == '8' and len(phone) != 11:
             bot.send_message(message.chat.id, "Номер телефона введен некорректно!")
             return
-        allowed_chars = set(
-            '0123456789+() -')
-        if not all(char in allowed_chars for char in message.text):
+
+        allowed_chars = set('0123456789+() -')
+        if not all(char in allowed_chars for char in phone):
             bot.send_message(message.chat.id, "Ошибка: номер телефона содержит недопустимые символы!")
             return
 
-        cursor.execute("UPDATE users SET phone_number=? WHERE id=?",
-                      (message.text, message.from_user.id))
-        conn.commit()
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET phone_number=? WHERE id=?", (phone, message.from_user.id))
+
         bot.send_message(message.chat.id, "Номер телефона успешно обновлен!")
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
 
-def process_region_step(message, conn):
-    cursor = conn.cursor()
+def process_region_step(message):
     try:
-        cursor.execute("UPDATE users SET region=? WHERE id=?",
-                      (message.text, message.from_user.id))
-        conn.commit()
-        bot.send_message(message.chat.id, "Регион успешно обновлен!")
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET region=? WHERE id=?", (message.text, message.from_user.id))
+        bot.send_message(message.chat.id, "Регион успешно обновлён!")
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
-
-def process_city_step(message, conn):
-    cursor = conn.cursor()
+def process_city_step(message):
     try:
-        cursor.execute("UPDATE users SET city=? WHERE id=?",
-                      (message.text, message.from_user.id))
-        conn.commit()
-        bot.send_message(message.chat.id, "Город успешно обновлен!")
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET city=? WHERE id=?", (message.text, message.from_user.id))
+        bot.send_message(message.chat.id, "Город успешно обновлён!")
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
-
-def process_street_step(message, conn):
-    cursor = conn.cursor()
+def process_street_step(message):
     try:
-        cursor.execute("UPDATE users SET street=? WHERE id=?",
-                      (message.text, message.from_user.id))
-        conn.commit()
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET street=? WHERE id=?", (message.text, message.from_user.id))
         bot.send_message(message.chat.id, "Улица успешно обновлена!")
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
-
-def process_house_step(message, conn):
-    cursor = conn.cursor()
+def process_house_step(message):
     try:
-        if not message.text[0].isdigit() or len(message.text) > 15 or message.text[0] in "/\\":
+        house = message.text.strip()
+        if not house[0].isdigit() or len(house) > 15 or house[0] in "/\\":
             bot.send_message(message.chat.id, "Ошибка: номер дома введен некорректно!")
             return
-        allowed_chars = set(
-            '0123456789/\\абвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ- ')
-        if not all(char in allowed_chars for char in message.text):
+        allowed_chars = set('0123456789/\\абвгдежзийклмнопрстуфхцчшщъыьэюяabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ- ')
+        if not all(char in allowed_chars for char in house):
             bot.send_message(message.chat.id, "Ошибка: номер дома содержит недопустимые символы!")
             return
 
-        cursor.execute("UPDATE users SET house_number=? WHERE id=?",
-                      (message.text, message.from_user.id))
-        conn.commit()
-        bot.send_message(message.chat.id, "Номер дома успешно обновлен!")
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET house_number=? WHERE id=?", (house, message.from_user.id))
+
+        bot.send_message(message.chat.id, "Номер дома успешно обновлён!")
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
-
-def process_flat_step(message, conn):
-    cursor = conn.cursor()
+def process_flat_step(message):
     try:
         if not message.text.isdigit():
             bot.send_message(message.chat.id, "Ошибка: номер квартиры должен быть числом!")
             return
-        cursor.execute("UPDATE users SET flat_number=? WHERE id=?",
-                      (message.text, message.from_user.id))
-        conn.commit()
-        bot.send_message(message.chat.id, "Номер квартиры успешно обновлен!")
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET flat_number=? WHERE id=?", (message.text, message.from_user.id))
+
+        bot.send_message(message.chat.id, "Номер квартиры успешно обновлён!")
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
-
-def process_index_step(message, conn):
-    cursor = conn.cursor()
+def process_index_step(message):
     try:
         if not message.text.isdigit():
             bot.send_message(message.chat.id, "Ошибка: индекс должен содержать только цифры!")
             return
-
         if len(message.text) != 6:
             bot.send_message(message.chat.id, "Ошибка: индекс должен содержать 6 цифр!")
             return
 
-            # Если проверки пройдены, обновляем данные
-        cursor.execute("UPDATE users SET [index]=? WHERE id=?",
-                       (message.text, message.from_user.id))
-        conn.commit()
-        bot.send_message(message.chat.id, "Индекс успешно обновлен!")
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET [index]=? WHERE id=?", (message.text, message.from_user.id))
+
+        bot.send_message(message.chat.id, "Индекс успешно обновлён!")
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
+
 
 def price_counter(mess, total_q, total_p):
     if total_q % 10 == 1 and total_q % 100 != 11:
