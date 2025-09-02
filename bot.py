@@ -2,17 +2,195 @@ from datetime import datetime
 from random import choice
 from telebot import types
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from config import ADMIN_ID
 from constants import variants
-from keyboards import create_main_keyboard, create_inline_keyboard
-from database.db_operations import update_cart_quantity, insert_highlight, delete_highlight, delete_cart, insert_users, personal_data, get_products, get_shops, get_categories, cart_database, likes_database, check_record_exists, insert_cart_with_size, insert_cart
+from keyboards import create_main_keyboard, create_inline_keyboard, admin_keyboard
+from database.db_operations import update_cart_quantity, insert_highlight, delete_highlight, delete_cart, insert_users, \
+    personal_data, get_products, get_shops, get_categories, cart_database, likes_database, check_record_exists, \
+    insert_cart_with_size, insert_cart, get_all_orders, update_item_field, update_shop_field, get_all_users, \
+    get_user_info, delete_user_info, process_edit_cat
 from database.db import get_db
 from bot_instance import bot
-from utils import send_product_page, process_fio_step, process_phone_step, process_region_step, process_city_step, process_street_step, process_house_step, process_flat_step, process_index_step, price_counter, print_personal_data, process_product_id_search
-
+from utils import send_product_page, process_fio_step, process_phone_step, process_region_step, process_city_step, \
+    process_street_step, process_house_step, process_flat_step, process_index_step, price_counter, print_personal_data, \
+    process_product_id_search, is_admin, process_edit_item, process_order_id_for_status, process_item_name, \
+    process_edit_shop, process_shop_name, process_get_cat_id
 media_messages = {}
 cart_messages = {}
 total_price_messages = {}
 user_states = {}
+
+@bot.message_handler(commands=['admin'])
+def admin(message):
+    user_id = message.from_user.id
+    if user_id == ADMIN_ID:
+        bot.send_message(message.chat.id, "Hello Admin!!!", reply_markup = admin_keyboard())
+    else:
+        remove_markup = types.ReplyKeyboardRemove()
+        bot.send_message(
+            message.chat.id,
+            "⛔ У вас нет доступа к этой команде",
+            reply_markup=remove_markup
+        )
+
+@bot.message_handler(func=lambda msg: msg.text == "Заказы" and is_admin(msg.from_user.id))
+def handle_orders(message):
+    markup = types.InlineKeyboardMarkup()
+    item1 = types.InlineKeyboardButton('Все заказы', callback_data="admin_ord")
+    item2 = types.InlineKeyboardButton('Изменить статус', callback_data="admin_ord_status")
+    markup.add(item1, item2)
+    bot.send_message(message.chat.id, "📦 Раздел заказов", reply_markup=markup)
+
+@bot.message_handler(func=lambda msg: msg.text == "Товары" and is_admin(msg.from_user.id))
+def handle_products(message):
+    markup = types.InlineKeyboardMarkup()
+    item1 = types.InlineKeyboardButton('Редактировать', callback_data="admin_edit_item")
+    item2 = types.InlineKeyboardButton('Добавить', callback_data="admin_add_item")
+    markup.add(item1, item2)
+    bot.send_message(message.chat.id, "🛍️ Раздел товаров", reply_markup=markup)
+
+@bot.message_handler(func=lambda msg: msg.text == "Селлеры" and is_admin(msg.from_user.id))
+def handle_products(message):
+    markup = types.InlineKeyboardMarkup()
+    item1 = types.InlineKeyboardButton('Редактировать', callback_data="admin_edit_shop")
+    item2 = types.InlineKeyboardButton('Добавить', callback_data="admin_add_shop")
+    markup.add(item1, item2)
+    bot.send_message(message.chat.id, "🛍️ Продавцы", reply_markup=markup)
+
+@bot.message_handler(func=lambda msg: msg.text == "Пользователи" and is_admin(msg.from_user.id))
+def handle_products(message):
+    markup = types.InlineKeyboardMarkup()
+    item1 = types.InlineKeyboardButton('Смотреть', callback_data="admin_check_user")
+    item2 = types.InlineKeyboardButton('Поиск по ID', callback_data="admin_search_user")
+    item3 = types.InlineKeyboardButton('Удалить', callback_data="admin_delete_user")
+    markup.add(item1, item2, item3)
+    bot.send_message(message.chat.id, "Пользователи", reply_markup=markup)
+
+@bot.message_handler(func=lambda msg: msg.text == "Категории" and is_admin(msg.from_user.id))
+def handle_products(message):
+    markup = types.InlineKeyboardMarkup()
+    item1 = types.InlineKeyboardButton('Изменить', callback_data="admin_change_cat")
+    markup.add(item1)
+    bot.send_message(message.chat.id, "Категории", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin'))
+def handle_orders_buttons(call):
+    try:
+        if call.data.startswith('admin_edit_item_'):
+            parts = call.data.split('_')
+            action = parts[3]
+            item_id = int(parts[4]) if len(parts) > 3 else None
+            if action == "name":
+                msg = bot.send_message(call.message.chat.id, f"Введите новое название для товара ID {item_id}:")
+                bot.register_next_step_handler(msg, lambda m: update_item_field(m, item_id, 'name'))
+            elif action == "description":
+                msg = bot.send_message(call.message.chat.id, f"Введите новое описание для товара ID {item_id}:")
+                bot.register_next_step_handler(msg, lambda m: update_item_field(m, item_id, 'description'))
+            elif action == "shop":
+                msg = bot.send_message(call.message.chat.id, f"Введите новый ID продавца для товара ID {item_id}:")
+                bot.register_next_step_handler(msg, lambda m: update_item_field(m, item_id, 'shop_id'))
+            elif action == "category":
+                msg = bot.send_message(call.message.chat.id, f"Введите новый ID категории для товара ID {item_id}:")
+                bot.register_next_step_handler(msg, lambda m: update_item_field(m, item_id, 'category_id'))
+            elif action == "price":
+                msg = bot.send_message(call.message.chat.id, f"Введите новую цену для товара ID {item_id}:")
+                bot.register_next_step_handler(msg, lambda m: update_item_field(m, item_id, 'price'))
+            elif action == "images":
+                msg = bot.send_message(call.message.chat.id,
+                                       f"Введите список названий изображений для товара ID {item_id} (через пробел):")
+                bot.register_next_step_handler(msg, lambda m: update_item_field(m, item_id, 'images'))
+            elif action == "status":
+                msg = bot.send_message(call.message.chat.id, f"Введите новый статус для товара с ID {item_id} (True, False):")
+                bot.register_next_step_handler(msg, lambda m: update_item_field(m, item_id, 'status'))
+            elif action == "sizes":
+                msg = bot.send_message(call.message.chat.id,
+                                       f"Введите доступные размеры для товара ID {item_id} через пробел:")
+                bot.register_next_step_handler(msg, lambda m: update_item_field(m, item_id, 'sizes'))
+
+        elif call.data.startswith('admin_edit_shop_'):
+            parts = call.data.split('_')
+            action = parts[3]
+            item_id = int(parts[4]) if len(parts) > 3 else None
+            if action == "name":
+                msg = bot.send_message(call.message.chat.id, f"Введите новое название для магазина {item_id}:")
+                bot.register_next_step_handler(msg, lambda m: update_shop_field(m, item_id, 'name'))
+
+            elif action == "description":
+                msg = bot.send_message(call.message.chat.id, f"Введите новое описание для магазина ID {item_id}:")
+                bot.register_next_step_handler(msg, lambda m: update_shop_field(m, item_id, 'description'))
+
+            elif action == "images":
+                msg = bot.send_message(call.message.chat.id, f"Введите список названий для изображений магазина ID {item_id} (через пробел):")
+                bot.register_next_step_handler(msg, lambda m: update_shop_field(m, item_id, 'description'))
+
+            elif action == "status":
+                msg = bot.send_message(call.message.chat.id,
+                                       f"Введите новый статус для магазина с ID {item_id} (True, False):")
+                bot.register_next_step_handler(msg, lambda m: update_shop_field(m, item_id, 'status'))
+
+        elif call.data == "admin_ord":
+            orders = get_all_orders(call.message)
+            if not orders:
+                bot.send_message(call.message.chat.id, "Нет заказов")
+                return
+            chunk_size = 3
+            for i in range(0, len(orders), chunk_size):
+                chunk = orders[i:i + chunk_size]
+                bot.send_message(call.message.chat.id, "\n\n".join(chunk))
+
+
+        elif call.data == "admin_search_user":
+            msg = bot.send_message(call.message.chat.id, "Введите ID пользователя для поиска:")
+            bot.register_next_step_handler(msg, get_user_info)
+
+        elif call.data == "admin_delete_user":
+            msg = bot.send_message(call.message.chat.id, "Введите ID пользователя для удаления:")
+            bot.register_next_step_handler(msg, delete_user_info)
+
+        elif call.data == "admin_check_user":
+            users = get_all_users(call.message)
+            if not users:
+                bot.send_message(call.message.chat.id, "Нет пользователей")
+                return
+            chunk_size = 10
+            for i in range(0, len(users), chunk_size):
+                chunk = users[i:i + chunk_size]
+                bot.send_message(call.message.chat.id, "\n\n".join(chunk))
+
+        elif call.data == "admin_ord_status":
+            msg = bot.send_message(call.message.chat.id, "Введите ID заказа для изменения статуса:")
+            bot.register_next_step_handler(msg, process_order_id_for_status)
+
+        elif call.data == "admin_edit_item":
+            msg = bot.send_message(call.message.chat.id, "Введите ID товара для изменения данных о нем:")
+            bot.register_next_step_handler(msg, process_edit_item)
+
+        elif call.data == "admin_add_item":
+            chat_id = call.message.chat.id
+            temp_items = {}
+            temp_items[chat_id] = {}
+            msg = bot.send_message(chat_id, "Введите название товара:")
+            bot.register_next_step_handler(msg, lambda m: process_item_name(m, temp_items))
+
+        elif call.data == "admin_edit_shop":
+            msg = bot.send_message(call.message.chat.id, "Введите ID магазина для изменения данных о нем:")
+            bot.register_next_step_handler(msg, process_edit_shop)
+
+        elif call.data == "admin_change_cat":
+            msg = bot.send_message(call.message.chat.id, "Введите ID категории для изменения названия:")
+            bot.register_next_step_handler(msg, process_get_cat_id)
+
+        elif call.data == "admin_add_shop":
+            chat_id = call.message.chat.id
+            temp_items = {}
+            temp_items[chat_id] = {}
+            msg = bot.send_message(chat_id, "Введите название магазина:")
+            bot.register_next_step_handler(msg, lambda m: process_shop_name(m, temp_items))
+
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f"Произошла ошибка: {str(e)}")
+        print(f"Error in handle_orders_buttons: {e}")
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
@@ -20,7 +198,6 @@ def welcome(message):
         user_name = message.from_user.username
         user_first_name = message.from_user.first_name
         user_id = message.from_user.id
-
         # Экранируем спецсимволы MarkdownV2 вручную
         escaped_first_name = user_first_name.translate(str.maketrans({
             "_": r"\_",
@@ -47,7 +224,7 @@ def welcome(message):
         bot.send_message(
             message.chat.id,
             text=f"""
-Привет, {escaped_first_name}\! 👋\nМы — торговая площадка, специализирующаяся на поддержке начинающих дизайнеров streetwear одежды\. Здесь ты найдёшь эксклюзивные вещи от талантливых российских дизайнеров\.\n\n Покупая у нас, ты не просто обновляешь гардероб — ты поддерживаешь независимых творцов и становишься частью нашего сообщества\!\n\n📌 Для начала необходимо ознакомиться с [политикой конфиденциальности](https://docs\.google\.com/document/d/1Vp\_LmDqdcAgMoghbV8KnVjbTDIJ7Lbj9KZEhP3Qwtug/edit\?tab=t\.0)\.\n\nПо всем вопросам и техническим сбоям пиши @irakolobova
+Привет, {escaped_first_name}\! 👋\nМы — торговая площадка, специализирующаяся на поддержке начинающих дизайнеров streetwear одежды\. Здесь ты найдёшь эксклюзивные вещи от талантливых российских дизайнеров\.\n\n Покупая у нас, ты не просто обновляешь гардероб — ты поддерживаешь независимых творцов и становишься частью нашего сообщества\!\n\n
             """,
             parse_mode='MarkdownV2',
             reply_markup=agree_markup
@@ -56,8 +233,6 @@ def welcome(message):
     except Exception as e:
         print(f"Ошибка: {str(e)}")
 
-
-
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     if message.chat.type == 'private':
@@ -65,7 +240,8 @@ def handle_text(message):
             buttons=[]
             shops = get_shops()
             for i in range(len(shops)):
-                buttons.append((shops[i].name, str(shops[i].id)))
+                if shops[i].status == True:
+                    buttons.append((shops[i].name, str(shops[i].id)))
             markup = create_inline_keyboard(buttons)
             bot.send_message(message.chat.id, 'Лови подборку наших магазинов — куда заглянем? 🛒', reply_markup=markup)
 
@@ -108,7 +284,6 @@ def handle_text(message):
                 bot.send_message(message.chat.id, '⬇️⬇️⬇️', reply_markup=markup)
 
         elif message.text == 'Корзина':
-
             products = get_products()
             user_id = message.from_user.id
             cart_arr = cart_database(user_id)
@@ -116,7 +291,6 @@ def handle_text(message):
             total_quantity = 0
             bot.send_message(message.chat.id, "*Корзина*\nВсё на месте, ждёт тебя 🛒", parse_mode="Markdown")
             for i in range(len(cart_arr)):
-
                 media = []
                 arr = products[cart_arr[i][0]-1].images
                 total_price += products[cart_arr[i][0] - 1].price * cart_arr[i][2]
@@ -152,7 +326,6 @@ def handle_text(message):
             else:
                 bot.send_message(message.chat.id, "Корзина пуста!")
 
-
         elif message.text == "Личные данные":
             with get_db() as conn:
                 cur = conn.cursor()
@@ -171,13 +344,12 @@ def handle_text(message):
                     bot.send_message(message.chat.id, txt, parse_mode="Markdown", reply_markup=markup)
 
         elif message.text == "Поиск по id":
-            msg = bot.send_message(message.chat.id, f"Заинтересовало что-то конкретное?🔥\nВведи ID товара, попробуем найти! (1-{len(get_products())}):")
+            cancel_markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            cancel_markup.add("❌ Отмена")
+            msg = bot.send_message(message.chat.id, f"Заинтересовало что-то конкретное?🔥\nВведи ID товара, попробуем найти! (1-{len(get_products())}):", reply_markup=cancel_markup)
             bot.register_next_step_handler(msg, process_product_id_search)
         else:
             bot.send_message(message.chat.id, 'Я тебя не понимаю. Пожалуйста, выбери один из вариантов.')
-
-
-
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
@@ -205,7 +377,6 @@ def callback_inline(call):
             elif call.data == 'change2':  # ФИО
                 msg = bot.send_message(call.message.chat.id, "Введи новое ФИО:")
                 bot.register_next_step_handler(msg, process_fio_step)
-
 
             elif call.data == 'change3':  # Номер телефона
                 msg = bot.send_message(call.message.chat.id, "Введи новый номер телефона:")
@@ -244,13 +415,10 @@ def callback_inline(call):
 
             if call.data == 'order':
                 pers_data = personal_data(user_id)
-
-                # Проверяем, что данные вообще получены
                 if pers_data is None:
                     bot.send_message(call.message.chat.id,
                                      'Не удалось получить твои данные. Пожалуйста, попробуй позже.')
                     return
-
                 # Проверяем обязательные поля
                 required_fields = {
                     3: 'ФИО',
@@ -261,10 +429,8 @@ def callback_inline(call):
                     6: 'Номер дома',
                     2: 'Индекс'
                 }
-
                 missing_fields = [field_name for index, field_name in required_fields.items()
                                   if len(pers_data) <= index or pers_data[index] is None]
-
                 if missing_fields:
                     markup = types.InlineKeyboardMarkup()
                     message = 'Данных для заказа недостаточно! Не заполнены:\n' + \
@@ -287,44 +453,31 @@ def callback_inline(call):
                 try:
                     cart = cart_database(user_id)
                     today = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-                    # Проверяем, есть ли товары в корзине
                     if not cart:
                         bot.send_message(call.message.chat.id, "Корзина пуста!")
                         return
-
                     # Переносим товары из корзины в заказы
                     with get_db() as conn:
                         cur = conn.cursor()
-
                         for product_id, size, quantity in cart:
                             cur.execute("SELECT shop_id, price FROM products WHERE id = ?", (product_id,))
                             result = cur.fetchone()
-
                             if not result:
                                 continue
-
                             shop_id, price = result
                             total_price = price * quantity
-
                             # Добавляем заказ
                             cur.execute('''
                                 INSERT INTO orders (user_id, shop_id, product_id, date, quantity, size, price)
                                 VALUES (?, ?, ?, ?, ?, ?, ?)
                             ''', (user_id, shop_id, product_id, today, quantity, size, total_price))
-
-                        # Очищаем корзину после всех заказов
                         cur.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
-
-                    # Отправляем подтверждение
                     bot.send_message(call.message.chat.id,
                                      "✅ Спасибо за заказ! Наш менеджер свяжется с тобой в ближайшее время.")
-
                 except Exception as e:
                     print(f"Ошибка при оформлении заказа: {e}")
                     bot.send_message(call.message.chat.id,
                                      "⚠️ Произошла ошибка при оформлении заказа. Пожалуйста, попробуй позже.")
-
 
             for i in range(len(shops)):
                 if call.data==str(shops[i].id) and shops[i].status:
@@ -346,24 +499,16 @@ def callback_inline(call):
                         shop_pr = [row[0] for row in cur.fetchall()]
 
                     for product_id in shop_pr:
-                        product_index = product_id - 1  # если id начинаются с 1, а индексы с 0
+                        product_index = product_id - 1
                         product = products[product_index]
-
                         if product.status:
                             markup = types.InlineKeyboardMarkup()
-
-                            # Кнопка избранного
                             fav_callback = f'favorite{product.id}'
                             if not check_record_exists(user_id, product.id):
                                 fav_button = types.InlineKeyboardButton('❤️', callback_data=fav_callback)
                             else:
                                 fav_button = types.InlineKeyboardButton('🤍', callback_data=fav_callback)
-
-                            # Кнопка корзины
                             cart_button = types.InlineKeyboardButton('🛒', callback_data=f'cart{product.id}')
-
-                            # Отправка продукта
-
                             send_product_page(call.message.chat.id, product.images, product.description)
                             markup.add(fav_button, cart_button)
                             text = choice(variants)
@@ -380,25 +525,19 @@ def callback_inline(call):
 
                     bot.send_message(call.message.chat.id, '*'+categories[i].name+ ':*', parse_mode="Markdown")
                     for product_id in prod:
-                        product_index = product_id - 1  # если id начинаются с 1, а индексы с 0
+                        product_index = product_id - 1
                         product = products[product_index]
 
                         if product.status:
                             markup = types.InlineKeyboardMarkup()
-                            # Кнопка избранного
                             fav_callback = f'favorite{product.id}'
                             if not check_record_exists(user_id, product.id):
                                 fav_button = types.InlineKeyboardButton('❤️', callback_data=fav_callback)
                             else:
                                 fav_button = types.InlineKeyboardButton('🤍', callback_data=fav_callback)
-
-                            # Кнопка корзины
                             cart_button = types.InlineKeyboardButton('🛒', callback_data=f'cart{product.id}')
-
-                            # Отправка продукта
                             send_product_page(call.message.chat.id, product.images, product.description)
                             markup.add(fav_button, cart_button)
-
                             text = choice(variants)
                             bot.send_message(call.message.chat.id, text, reply_markup=markup)
                     break
@@ -426,21 +565,20 @@ def callback_inline(call):
                     item2 = types.InlineKeyboardButton('🛒', callback_data=f'cart{products[i].id}')
                     markup.add(item1, item2)
 
-                    # Сначала редактируем кнопки
                     bot.edit_message_reply_markup(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=markup
                     )
 
-                    if new_button_text == '🤍':  # Значит, только что добавили в избранное
+                    if new_button_text == '🤍':
                         bot.send_message(
                             chat_id=call.message.chat.id,
                             text='Добавил в избранное! Теперь не потеряется 🔖',
-                            reply_to_message_id=call.message.message_id  # Это привязывает сообщение к предыдущему
+                            reply_to_message_id=call.message.message_id
                         )
                         insert_highlight(call.from_user.id, products[i].id)
-                    else:  # Удалили из избранного
+                    else:
                         bot.send_message(
                             chat_id=call.message.chat.id,
                             text='Товар удалён из избранного!',
@@ -451,7 +589,6 @@ def callback_inline(call):
 
             # добавить в корзину
             for i in range(len(products)):
-                # Если callback_data начинается с 'cart'
                 if call.data.startswith('cart'):
                     product_id = int(call.data.replace('cart', ''))
                     if products[i].id == product_id:
@@ -460,13 +597,13 @@ def callback_inline(call):
                             markup = types.InlineKeyboardMarkup()
                             for s in range(len(products[i].sizes)):
                                 size = products[i].sizes[s]
-                                name = 'sizecart' + '-' + f"{products[i].id}-{s}"  # Формируем callback_data
+                                name = 'sizecart' + '-' + f"{products[i].id}-{s}"
                                 item = types.InlineKeyboardButton(size, callback_data=name)
                                 markup.add(item)
                             bot.send_message(
                                 chat_id=call.message.chat.id,
                                 text='Выбери размер',
-                                reply_to_message_id=call.message.message_id,  # Привязываем к сообщению с товаром
+                                reply_to_message_id=call.message.message_id,
                                 reply_markup=markup
                             )
                         else:
@@ -475,11 +612,10 @@ def callback_inline(call):
                             bot.send_message(
                                 chat_id=call.message.chat.id,
                                 text="Готово! Лут в корзине — почти твой 😉",
-                                reply_to_message_id=call.message.message_id  # Привязываем к сообщению с товаром
+                                reply_to_message_id=call.message.message_id
                             )
                         break
 
-                # Если callback_data содержит id и размер (например, "123-0")
                 elif call.data.startswith('sizecart'):
                     r = call.data.split('-')
                     product_id = int(r[1])
@@ -490,7 +626,7 @@ def callback_inline(call):
                         bot.send_message(
                             chat_id=call.message.chat.id,
                             text="Готово! Лут в корзине — почти твой 😉",
-                            reply_to_message_id=call.message.message_id  # Привязываем к сообщению с товаром
+                            reply_to_message_id=call.message.message_id
                         )
                         break
 
@@ -501,8 +637,6 @@ def callback_inline(call):
                     product_id = int(r[1])
                     size = r[2]
                     key = f"{product_id}_{size}"
-
-                    # Удаляем связанные сообщения
                     if key in cart_messages:
                         for message_id in cart_messages[key]:
                             try:
@@ -510,14 +644,10 @@ def callback_inline(call):
                             except Exception as e:
                                 print(f"Ошибка при удалении сообщения {message_id}: {e}")
                         del cart_messages[key]
-
-                    # Удаляем товар из корзины
                     if size != 'None':
                         delete_cart(user_id, product_id, size)
                     else:
                         delete_cart(user_id, product_id)
-
-                    # Получаем актуальные данные корзины
                     with get_db() as conn:
                         cur = conn.cursor()
                         cur.execute("""
@@ -535,9 +665,6 @@ def callback_inline(call):
                             bot.delete_message(call.message.chat.id, total_price_messages[call.message.chat.id])
                         except:
                             pass
-
-
-                    # Обновляем счетчик
                     if new_quantity and new_price:
                         total_message = price_counter(call.message.chat.id,
                                                       new_quantity if new_quantity else 0,
@@ -546,13 +673,9 @@ def callback_inline(call):
                     else:
                         bot.send_message(call.message.chat.id, "Корзина пуста!")
 
-
-
                 except Exception as e:
                     print(f"Ошибка в обработке delcart: {e}")
 
-
-            #увеличить количество
             if call.data.startswith('quantity+'):
                 try:
                     r = call.data.split('_')
@@ -565,7 +688,6 @@ def callback_inline(call):
                     quantity = int(r[3])
                     key = f"{product_id}_{size}"
 
-                    # Увеличиваем количество в корзине
                     if size != 'None':
                         update_cart_quantity(user_id, product_id, size, quantity + 1)
                     else:
@@ -610,7 +732,6 @@ def callback_inline(call):
                     markup.add(item1, item2, item3)
                     delete_message = bot.send_message(call.message.chat.id, '⬇️⬇️⬇️', reply_markup=markup)
                     cart_messages[key].append(delete_message.message_id)
-
                     # Получаем актуальные данные корзины
                     with get_db() as conn:
                         cur = conn.cursor()
@@ -629,7 +750,6 @@ def callback_inline(call):
                             bot.delete_message(call.message.chat.id, total_price_messages[call.message.chat.id])
                         except:
                             pass
-
                     # Обновляем счетчик
                     if new_quantity != 0 and new_price != 0:
                         total_message = price_counter(call.message.chat.id,
@@ -638,10 +758,6 @@ def callback_inline(call):
                         total_price_messages[call.message.chat.id] = total_message.message_id
                     else:
                         bot.send_message(call.message.chat.id, "Корзина пуста!")
-
-
-
-
                 except Exception as e:
                     print(f"Ошибка в обработке quantity+: {e}")
 
@@ -704,7 +820,6 @@ def callback_inline(call):
                         markup.add(item1, item2, item3)
                         delete_message = bot.send_message(call.message.chat.id, '⬇️⬇️⬇️', reply_markup=markup)
                         cart_messages[key].append(delete_message.message_id)
-
                         # Получаем актуальные данные корзины
                         with get_db() as conn:
                             cur = conn.cursor()
@@ -723,7 +838,6 @@ def callback_inline(call):
                                 bot.delete_message(call.message.chat.id, total_price_messages[call.message.chat.id])
                             except:
                                 pass
-
                         # Обновляем счетчик
                         if new_quantity != 0 and new_price != 0:
                             total_message = price_counter(call.message.chat.id,
@@ -732,10 +846,6 @@ def callback_inline(call):
                             total_price_messages[call.message.chat.id] = total_message.message_id
                         else:
                             bot.send_message(call.message.chat.id, "Корзина пуста!")
-
-
-
-
                 except Exception as e:
                     print(f"Ошибка в обработке quantity-: {e}")
     except Exception as e:

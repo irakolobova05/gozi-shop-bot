@@ -1,2 +1,3 @@
-TOKEN = '7728854803:AAFx_b10TiI9oqyKnZgby-rZZbc7rXmS-FA'
+TOKEN = 'token'
 DB_PATH = 'db/gozi_database'
+ADMIN_ID = 1 #ID админа в телеграме

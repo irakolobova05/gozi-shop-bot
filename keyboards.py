@@ -18,3 +18,16 @@ def create_inline_keyboard(buttons):
     for text, callback_data in buttons:
         markup.add(types.InlineKeyboardButton(text, callback_data=callback_data))
     return markup
+
+def admin_keyboard():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add(
+        types.KeyboardButton("Заказы"),
+        types.KeyboardButton("Товары")
+    )
+    markup.add(
+        types.KeyboardButton("Селлеры"),
+        types.KeyboardButton("Пользователи")
+    )
+    markup.add(types.KeyboardButton("Категории"))
+    return markup
